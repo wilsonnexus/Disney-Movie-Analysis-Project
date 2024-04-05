@@ -1,0 +1,222 @@
+---
+title: "Disney Movie Analysis Project"
+author: "Jia Hui Yu, Benjamin Goldberg, Christian Kiernan, Wilson Neira, Colin Hadden"
+date: "2023-05-22"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document:
+    df_print: paged
+mainfont: Times New Roman
+sansfont: Arial
+fontsize: 12pt
+linespacing: 1
+geometry:margin: 1in
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(echo = TRUE)
+
+knitr::opts_chunk$set(echo = TRUE, tidy = TRUE, tidy.opts = list(width.cutoff = 50), warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.width=10, fig.height=6) 
+```
+
+
+```{r set up workspace, include=FALSE}
+library(tidyverse)
+library(skimr)
+library(moderndive)
+library(psych)
+library(lmtest)
+library(car)
+library(knitr)
+library(kableExtra)
+# library(interactions)
+```
+
+
+# Introduction
+For this project, we are trying to answer two questions;
+\begin{itemize}
+  \item[] What is the impact of genre, budget, gross earnings, length, and votes on rating?
+  \item[] Is there a linear relationship between gross earnings from the movie and rating?\\
+\end{itemize}
+
+
+We chose the Disney dataset to help us answer these questions. This dataset is a combined dataset from a user on Kaggle, Prateek Majumder and the ggplot2movies package. The dataset consists of 180 total observations, with each individual observation corresponding to a specific Disney movie released between 1937 and 2005, its average IMDB user rating, genre, MPAA rating, and some logistics about the movie. For our analysis, we will be using the average IMDB user rating as the response variable. The predictors we will use are genre, budget, gross earnings, length, and votes. The genre variable corresponds to the genre of the movie. The budget variable corresponds to the total budget of the movie in US dollars. The gross earnings variable corresponds to the movie’s domestic box-office gross earnings in US dollars. The length is the length of the movie in minutes, and votes is the number of reviews for the movie. We will use these predictors to create a model to predict the response variable.  
+
+```{r, echo=FALSE}
+data = read.csv(file = './disney.csv') 
+
+n = nrow(data)
+
+# remove observations with no genre
+data = data %>% filter(genre != '') %>% select(genre, length, votes, budget, total_gross, rating)
+data = data %>% mutate(genre =  case_when(
+  genre %in% c("Romantic Comedy", "Comedy", "Black Comedy") ~ "Comedy",
+  genre %in% c("Drama", "Thriller/Suspense", "Horror", "Musical") ~ "Drama",
+  TRUE ~ "Action"
+))
+
+
+kable(describe(data, skew = FALSE), format="latex", booktabs=TRUE) %>% 
+  kable_styling(latex_options="scale_down")
+
+pairs(~rating + length + votes + budget + total_gross, data=data, main='Scatterplot Matrix')
+cormatrix = cor(data[,c(2:6)])
+cormatrix
+
+
+model = lm(rating ~ genre +  votes + budget + total_gross + budget * genre + votes * total_gross, data = data)
+# anova(model)
+
+
+```
+
+
+
+(Figure 1: Scatterplot and correlation coefficients of the predictors)  
+The scatter plot matrix reveals key relationships between our predictors. The strongest relationship we were able to find between the predictors and the response was a moderate positive linear relationship between votes (predictor) and rating (response). The scatterplot did not reveal any significant outliers.
+
+
+\newpage
+# Method/Results
+Since there are too many genres in the dataset, we decided to reduce the category of genres to three; comedy, drama, and action. We also removed observations with no genre, so we have a total of 178 observations (previously 180). The reference category in this case is action($\beta_0$). 
+
+```{r, echo=FALSE}
+#To add quant pred ot via anova
+#Reduced model
+model0 = lm(rating ~ length + votes + budget + total_gross, data = data)
+modelr = lm(rating ~ genre + length + votes + budget + total_gross , data = data)
+anova(model0, modelr)
+#P Val is sig so add genre
+```
+(Figure 2: Anova with model with and without genre predictor)  
+We ran an anova test to see if our qualitative predictor genre was significant. Since the anova p-value between the reduced model without genre and the full model with genre was less than 0.05, we added genre to the initial model.  
+
+We decide to fit the initial model:  
+\begin{align*}
+  \text{Rating}_i &= \beta_0 + \beta_1 * \text{GenreComedy} + \beta_2 *  \text{GenreDrama}\\ 
+  &+ \beta_3 * \text{Length}_i + \beta_4 * \text{Votes}_i + \beta_5 * \text{Budget}_i \\ 
+  &+ \beta_6 * \text{Total Gross}_i + \varepsilon_i
+\end{align*}
+
+
+Where:  
+
+- $\beta_0$ = $5.871$  
+- $\beta_1$ = $-4.894*10^{-1}$  
+- $\beta_2$ = $1.495*10^{-1}$  
+- $\beta_3$ = $1.666*10^{-3}$  
+- $\beta_4$ = $3.826*10^{-5}$  
+- $\beta_5$ = $-7.992*10^{-9}$  
+- $\beta_6$ = $3.112*10^{-9}$  
+
+We used the best subsets selection and found the model with the lowest adjusted r^2 had only genre, budget, total gross and votes. This means that length would no longer be included in our model.  
+
+```{r, echo=FALSE}
+#Check significance of interaction term budget and genre
+model2 = lm(rating ~  votes + total_gross + budget*genre, data = data)
+anova(model2)
+#Check sig of votes*total_gross
+model3 = lm(rating ~ budget + genre + votes*total_gross, data = data)
+anova(model3)
+```
+(Figure 3: Type 1 Anovas to test significance of interactions terms, budget ⋅ genre and votes ⋅ total gross)  
+The p-value is less than 0.05 for both interaction terms using a type I anova test, so we added both to the model.  
+
+## Final Model 
+\begin{align*}
+  \text{Rating}_i &= \beta_0 + \beta_1 * \text{GenreComedy} + \beta_2 *  \text{GenreDrama}\\
+  &+ \beta_3 * \text{Votes}_i + \beta_4 * \text{Budget}_i + \beta_5 * \text{Total Gross}_i\\
+  &+ \beta_6 * \text{Budget} * \text{GenreComedy} + \beta_7 * \text{Budget} * \text{GenreDrama}\\ 
+  &+ \beta_8 * \text{Votes}_i * \text{Total Gross}_i + \varepsilon_i
+\end{align*}
+
+
+Where:  
+
+- $\beta_0$ = $5.529$  
+- $\beta_1$ = $-3.145*10^{-1}$  
+- $\beta_2$ = $7.642*10^{-1}$  
+- $\beta_3$ = $7.327*10^{-5}$  
+- $\beta_4$ = $-5.044*10^{-9}$  
+- $\beta_5$ = $6.761*10^{-9}$  
+- $\beta_6$ = $-2.874*10^{-9}$  
+- $\beta_7$ = $-1.482*10^{-8}$  
+- $\beta_8$ = $-2.110*10^{-3}$  
+
+## Graphical Assessment of the Assumptions
+```{r, echo=FALSE}
+#New model graphical assumptions
+modelnew2 = lm(rating ~ budget*genre + votes*total_gross, data = data)
+plot(modelnew2,1)
+outdata <- fortify(modelnew2)
+outdata$yHatCategory <- ifelse(outdata$.fitted < median(outdata$.fitted), c("group1"), c("group2"))
+leveneTest(.resid ~ yHatCategory, data=outdata)
+```
+(Figure 4: Studentized residuals vs fitted values plot and Levene test for homogeneity output)  
+The average of the residuals is approximately 0, so we concluded that the linearity assumption is not violated. By analyzing a plot of the residuals versus the fitted values, we were able to determine that  the constant variance assumption is not violated. We came to this conclusion because there was no fan shape  in the plot, and the p-value  for the variance test is greater than 0.05.    
+
+```{r, echo=FALSE}
+qqnorm(modelnew2$residuals)
+qqline(modelnew2$residuals)
+shapiro.test(modelnew2$residuals)
+hist(modelnew2$residuals, xlab = "Residuals", main = "Histogram of Residuals")
+```
+(Figure 5: Q-Qplot and Q-Qline of residuals, Shapiro-Wilk Test for normality output, and histogram of the model residuals)  
+The residuals fall on the Q-Qline. The Shapiro-Wilk test for normality yielded a p-value greater than 0.05, so normality is not violated. 
+
+```{r, echo=FALSE}
+#Indepedence assumtpions new model
+data2 = read.csv(file = './disney.csv') 
+
+# remove observations with no genre
+data_time = data2 %>% filter(genre != '') %>% dplyr::select(genre, length, votes, budget, total_gross, rating, year, month)
+data_time = data_time %>% mutate(genre =  case_when(
+  genre %in% c("Romantic Comedy", "Comedy", "Black Comedy") ~ "Comedy",
+  genre %in% c("Drama", "Thriller/Suspense", "Horror", "Musical") ~ "Drama",
+  TRUE ~ "Action"
+))
+data_time <- data_time %>% arrange(year, month)
+modelnew2 = lm(rating ~ budget*genre + votes*total_gross, data = data_time)
+durbinWatsonTest(modelnew2)
+dat <- fortify(modelnew2, data_time)
+ggplot(data = dat) + geom_point(aes(x = year, y = .resid, color = genre)) + labs(x = "Year", y = "Residuals", title = "Residuals Vs Time Plot") 
+
+```
+
+(Figure 6: Durbin Watson test output and residuals vs year plot by genre for data sorted by year and month)  
+After the data was sorted by year and month, the  p-value for the Durbin Watson test was greater than 0.05 and the residuals are scattered randomly on the residual vs time plot, so the independence assumption is not violated.
+
+## Hypothesis Testing
+```{r, echo=FALSE}
+#Hypothesis testing for the new model
+summary(modelnew2)
+```
+(Figure 7: Summary output for the final model)  
+The model utility test has a p-value less than 0.05, so we can say the model is useful. Budget is the only quantitative predictor that is not significant in the final model. All of the other predictors are significant. 
+
+## 95% Confidence Intervals for the Beta coefficients
+```{r, echo=FALSE}
+#CIs for the new model
+confint(modelnew2)
+```
+(Figure 8: 95% confidence interval for Beta coefficients in the model)  
+All of the quantitative predictors besides budget do not contain zero in their intervals, so we can conclude that they are significant.
+
+
+\newpage
+# Conclusion
+There were two main research equations that we examined in the project. The first was to determine the influence of genre, budget, gross earnings, length, and votes on movie ratings. The second was to discover if a linear relationship exists between a movie's gross earnings and its rating. Our findings indicated that genre, budget, gross earnings, and votes were significant in determining a movie's rating. In the model selection process, we found that length was not significant in determining a movie's rating, and it was not included in our final model.  
+
+For our second research question, we found that there is a moderate positive linear relationship between a movie's gross earnings and its rating. 
+
+Initially, we were unsure if we could assume normality of our data. We tried transforming the predictors, first by \textbf{ln}, and then by \textbf{square root}. However, this did not improve the distribution of our data, so we decided to proceed without a transformation. Ultimately, the results of the Shapiro-Wilk Test, combined with analysis of the Q-Q plot, revealed that there was enough evidence to conclude that the normality assumption was not violated. 
+
+
+
+
+
+
+
